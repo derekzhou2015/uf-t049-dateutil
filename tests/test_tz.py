@@ -796,6 +796,52 @@ def test_tzoffset_sub_minute():
     assert test_datetime.utcoffset() == delta
 
 
+@pytest.mark.tzoffset
+@pytest.mark.parametrize('offset', [
+    # Exactly +/- 24 hours and beyond, given as seconds
+    86400, -86400, 90000, -90000, 2 * 86400,
+    # The same magnitudes given as timedeltas
+    timedelta(hours=24), timedelta(hours=-24),
+    timedelta(hours=25), timedelta(days=-2),
+])
+def test_tzoffset_rejects_out_of_range(offset):
+    # The construction surface itself refuses offsets at or beyond +/- 24
+    # hours, so no parsing path can produce a tzinfo that only fails later
+    # when utcoffset() is consulted.
+    with pytest.raises(ValueError):
+        tz.tzoffset(None, offset)
+
+    # The fresh-instance factory must enforce the same boundary.
+    with pytest.raises(ValueError):
+        tz.tzoffset.instance(None, offset)
+
+
+@pytest.mark.tzoffset
+@pytest.mark.parametrize('offset', [
+    0, 1, -1, 86399, -86399, 18000, -18000,
+    timedelta(hours=23, minutes=59, seconds=59),
+    timedelta(hours=-23, minutes=-59, seconds=-59),
+    timedelta(hours=12, seconds=30),
+])
+def test_tzoffset_accepts_in_range(offset):
+    tzi = tz.tzoffset(None, offset)
+    expected = (offset if isinstance(offset, timedelta)
+                else timedelta(seconds=offset))
+    assert tzi.utcoffset(None) == expected
+
+
+@pytest.mark.tzoffset
+def test_validate_offset_helper():
+    assert tz.validate_offset(0) == 0
+    assert tz.validate_offset(-86399) == -86399
+    delta = timedelta(hours=23, minutes=59)
+    assert tz.validate_offset(delta) is delta
+
+    for bad in (86400, -86400, timedelta(hours=24), timedelta(days=-1)):
+        with pytest.raises(ValueError):
+            tz.validate_offset(bad)
+
+
 @pytest.mark.tzlocal
 class TzLocalTest(unittest.TestCase):
     def testEquality(self):

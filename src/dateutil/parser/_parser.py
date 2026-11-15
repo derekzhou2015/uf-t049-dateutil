@@ -823,6 +823,14 @@ class parser:
                     else:
                         raise ValueError(timestr)
 
+                    # Validate the numeric offset components against the same
+                    # ranges enforced by the strict ISO parser (hours 0-23,
+                    # minutes 0-59). Without this, out-of-range components
+                    # either silently produce a wrong fixed offset or build a
+                    # tzinfo that only fails later, downstream of parsing.
+                    self._validate_tzoffset_components(hour_offset,
+                                                       min_offset, timestr)
+
                     res.tzoffset = signal * (hour_offset * 3600 + min_offset * 60)
 
                     # Look for a timezone name between parenthesis
@@ -1046,6 +1054,15 @@ class parser:
 
         elif hms == 2:
             (res.second, res.microsecond) = self._parsems(value_repr)
+
+    def _validate_tzoffset_components(self, hour_offset, min_offset, timestr):
+        # The strict ISO parser rejects offset hours outside 0-23 and offset
+        # minutes outside 0-59; apply the same component-wise limits to the
+        # numeric offsets accepted by this lenient parser so that malformed
+        # strings are refused at the parsing entry point rather than parsed
+        # into a silently wrong or unusable fixed offset.
+        if hour_offset > 23 or min_offset > 59:
+            raise ValueError(timestr)
 
     def _could_be_tzname(self, hour, tzname, tzoffset, token):
         return (hour is not None and

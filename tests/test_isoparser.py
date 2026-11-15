@@ -349,6 +349,64 @@ def test_parse_tzstr_fails(tzstr, exception):
     with pytest.raises(exception):
         isoparser().parse_tzstr(tzstr)
 
+
+# All three numeric offset shapes, out of range at several magnitudes in
+# either component. These pin the strict parser's rejection boundary so it
+# stays aligned with the lenient parser and with the tzoffset constructor.
+# The first form is hours-only; the other two also carry a minute field.
+ISO_HOUR_FORMS = ["{:+03d}", "{:+03d}{:02d}", "{:+03d}:{:02d}"]
+ISO_HM_FORMS = ["{:+03d}{:02d}", "{:+03d}:{:02d}"]
+
+
+@pytest.mark.parametrize("form", ISO_HOUR_FORMS)
+@pytest.mark.parametrize("hours", [24, 25, 48, 99])
+def test_parse_tzstr_invalid_hours(form, hours):
+    tzstr = form.format(hours, 0) if "{:02d}" in form else form.format(hours)
+    with pytest.raises(ValueError, match="Invalid hours"):
+        isoparser().parse_tzstr(tzstr)
+
+
+@pytest.mark.parametrize("form", ISO_HM_FORMS)
+@pytest.mark.parametrize("hours,minutes", [
+    (0, 60), (0, 99), (23, 60), (23, 99), (99, 99),
+])
+def test_parse_tzstr_invalid_minutes(form, hours, minutes):
+    with pytest.raises(ValueError, match="Invalid minutes"):
+        isoparser().parse_tzstr(form.format(hours, minutes))
+
+
+@pytest.mark.parametrize("form", ISO_HOUR_FORMS)
+def test_parse_tzstr_range_boundary(form):
+    # Hour 23 / minute 59 are the accepted boundary; 24 and 60 are refused.
+    if "{:02d}" in form:
+        accepted = isoparser().parse_tzstr(form.format(23, 59))
+        assert accepted == tz.tzoffset(
+            None, timedelta(hours=23, minutes=59).total_seconds())
+
+        with pytest.raises(ValueError):
+            isoparser().parse_tzstr(form.format(24, 0))
+
+        with pytest.raises(ValueError):
+            isoparser().parse_tzstr(form.format(23, 60))
+    else:
+        accepted = isoparser().parse_tzstr(form.format(23))
+        assert accepted == tz.tzoffset(
+            None, timedelta(hours=23).total_seconds())
+
+        with pytest.raises(ValueError):
+            isoparser().parse_tzstr(form.format(24))
+
+
+def test_parse_tzstr_negative_offsets_rejected_at_same_boundary():
+    # The sign must not change the component-wise range check.
+    for tzstr in ("-24:00", "-2500", "-25", "-23:60", "-0060"):
+        with pytest.raises(ValueError):
+            isoparser().parse_tzstr(tzstr)
+
+    tzi = isoparser().parse_tzstr("-23:59")
+    assert tzi == tz.tzoffset(
+        None, -timedelta(hours=23, minutes=59).total_seconds())
+
 ###
 # Test parse_isodate
 def __make_date_examples():

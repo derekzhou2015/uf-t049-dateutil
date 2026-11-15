@@ -2,6 +2,7 @@ from . import _tzpath
 from ._tzpath import reset_tzpath
 from .tz import *
 from .tz import __doc__
+from ._common import validate_offset
 
 __all__ = [
     "tzutc",
@@ -15,6 +16,7 @@ __all__ = [
     "tzwinlocal",
     "gettz",
     "enfold",
+    "validate_offset",
     "datetime_ambiguous",
     "datetime_exists",
     "resolve_imaginary",

@@ -221,6 +221,112 @@ def test_parse_with_tzoffset(dstr, expected):
     assert result == expected
 
 
+# The three numeric offset shapes accepted by the lenient parser:
+#   two-digit hour ("+23"), four-digit compact ("+2359"), colon ("+23:59")
+OFFSET_FORMS = ["{sign}{hours:02d}", "{sign}{hours:02d}{minutes:02d}",
+                "{sign}{hours:02d}:{minutes:02d}"]
+
+
+def _offset_dstr(form, sign, hours, minutes):
+    return "2020-01-01 12:00 " + form.format(sign=sign, hours=hours,
+                                             minutes=minutes)
+
+
+# (form index, hours, minutes) triples that are valid in each form. The
+# two-digit hour form carries no minute component, so its minutes are 0.
+IN_RANGE_OFFSET_CASES = [
+    # two-digit hour form
+    (0, 0, 0), (0, 1, 0), (0, 12, 0), (0, 23, 0),
+    # four-digit compact form
+    (1, 0, 0), (1, 0, 1), (1, 0, 59), (1, 5, 30),
+    (1, 12, 0), (1, 23, 0), (1, 23, 59),
+    # colon form
+    (2, 0, 0), (2, 0, 1), (2, 0, 59), (2, 5, 30),
+    (2, 12, 0), (2, 23, 0), (2, 23, 59),
+]
+
+
+@pytest.mark.parametrize('sign', ['+', '-'])
+@pytest.mark.parametrize('form_idx,hours,minutes', IN_RANGE_OFFSET_CASES)
+def test_parse_tzoffset_in_range_no_regression(form_idx, sign, hours, minutes):
+    # In-range offsets keep their exact historical conversion results.
+    form = OFFSET_FORMS[form_idx]
+    dstr = _offset_dstr(form, sign, hours, minutes)
+    expected_seconds = (1 if sign == '+' else -1) * (hours * 3600 +
+                                                      minutes * 60)
+
+    result = parse(dstr)
+
+    assert result.tzinfo == tzoffset(None, expected_seconds)
+    # The produced tzinfo must be fully usable: no deferred failure when
+    # the offset is actually consulted downstream of parsing.
+    assert result.utcoffset() == timedelta(seconds=expected_seconds)
+    assert result.isoformat()
+
+
+# Out-of-range (form index, hours, minutes) triples, covering multiple
+# magnitudes of each bad component in every numeric form.
+OUT_OF_RANGE_OFFSET_CASES = [
+    # Hour component out of range (>= 24)
+    (0, 24, 0), (0, 25, 0), (0, 48, 0), (0, 99, 0),
+    (1, 24, 0), (1, 25, 0), (1, 48, 0), (1, 99, 0),
+    (2, 24, 0), (2, 25, 0), (2, 48, 0), (2, 99, 0),
+    # Minute component out of range (>= 60), including the silent
+    # mis-computation class where the total stays under 24 hours
+    (1, 0, 60), (1, 0, 99), (1, 23, 60), (1, 23, 99),
+    (2, 0, 60), (2, 0, 99), (2, 23, 60), (2, 23, 99),
+    # Both components out of range
+    (1, 99, 99), (2, 99, 99),
+]
+
+
+@pytest.mark.parametrize('sign', ['+', '-'])
+@pytest.mark.parametrize('form_idx,hours,minutes', OUT_OF_RANGE_OFFSET_CASES)
+def test_parse_tzoffset_out_of_range_rejected(form_idx, sign, hours, minutes):
+    form = OFFSET_FORMS[form_idx]
+    dstr = _offset_dstr(form, sign, hours, minutes)
+
+    # Same error vocabulary the parser already uses for unparseable input;
+    # ParserError is a ValueError subclass, matching the strict ISO parser's
+    # rejection type.
+    with pytest.raises(ParserError):
+        parse(dstr)
+
+
+def test_parse_tzoffset_boundary_values():
+    # The exact acceptance/rejection boundary, in every numeric form.
+    for form_idx in (1, 2):
+        form = OFFSET_FORMS[form_idx]
+        accepted = parse(_offset_dstr(form, '+', 23, 59))
+        assert accepted.utcoffset() == timedelta(hours=23, minutes=59)
+
+        with pytest.raises(ParserError):
+            parse(_offset_dstr(form, '+', 24, 0))
+
+        with pytest.raises(ParserError):
+            parse(_offset_dstr(form, '+', 23, 60))
+
+    # Two-digit hour form: boundary is hour 23 accepted, 24 rejected.
+    accepted = parse(_offset_dstr(OFFSET_FORMS[0], '+', 23, 0))
+    assert accepted.utcoffset() == timedelta(hours=23)
+    with pytest.raises(ParserError):
+        parse(_offset_dstr(OFFSET_FORMS[0], '+', 24, 0))
+
+
+def test_parse_tzoffset_ignoretz_does_not_bypass_validation():
+    # Range validation runs while the offset tokens are parsed, before
+    # ignoretz would suppress tzinfo construction; ignoretz is therefore
+    # not a bypass around the component range check.
+    with pytest.raises(ParserError):
+        parse("2020-01-01 12:00 +25:00", ignoretz=True)
+
+    # ... while a well-formed offset under ignoretz still yields a naive
+    # datetime, confirming the flag itself keeps working.
+    result = parse("2020-01-01 12:00 +05:00", ignoretz=True)
+    assert result == datetime(2020, 1, 1, 12, 0)
+    assert result.tzinfo is None
+
+
 class TestFormat:
 
     def test_ybd(self):

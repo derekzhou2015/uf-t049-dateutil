@@ -18,7 +18,8 @@ from collections import OrderedDict
 
 from .. import _tzdata_impl
 from . import _tzpath
-from ._common import _tzinfo, _validate_fromutc_inputs, enfold, tzrangebase
+from ._common import (_tzinfo, _validate_fromutc_inputs, enfold,
+                      tzrangebase, validate_offset)
 from ._factories import _TzOffsetFactory, _TzSingleton, _TzStrFactory
 from ._tzfile import tzfile
 
@@ -127,6 +128,11 @@ class tzoffset(datetime.tzinfo, metaclass=_TzOffsetFactory):
     :param offset:
         The time zone offset in seconds, or (since version 2.6.0, represented
         as a :py:class:`datetime.timedelta` object).
+
+    :raises ValueError:
+        Raised if the absolute value of ``offset`` is at least 24 hours,
+        since such an offset cannot back an aware
+        :py:class:`datetime.datetime`.
     """
     def __init__(self, name, offset):
         self._name = name
@@ -137,6 +143,12 @@ class tzoffset(datetime.tzinfo, metaclass=_TzOffsetFactory):
         except (TypeError, AttributeError):
             pass
 
+        # An offset at or beyond +/- 24 hours cannot back an aware
+        # datetime: CPython rejects it when utcoffset() is consulted, which
+        # would surface far from the code that produced the offset. Reject
+        # it here at the construction surface so every parsing path shares
+        # one enforcement point.
+        validate_offset(offset)
         self._offset = datetime.timedelta(seconds=offset)
 
     def utcoffset(self, dt):

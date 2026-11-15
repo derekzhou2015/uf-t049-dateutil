@@ -6,7 +6,35 @@ from datetime import datetime, timedelta, tzinfo
 
 ZERO = timedelta(0)
 
-__all__ = ["enfold"]
+__all__ = ["enfold", "validate_offset"]
+
+
+def validate_offset(offset):
+    """Validate that a fixed UTC offset is within the supported range.
+
+    Both numeric offsets (interpreted as seconds) and
+    :class:`datetime.timedelta` offsets are accepted. The absolute value of
+    the offset must be strictly less than 24 hours, as required for a
+    :class:`datetime.tzinfo` that can be attached to an aware
+    :class:`datetime.datetime`.
+
+    :raises ValueError:
+        Raised if the offset is at least 24 hours away from UTC in either
+        direction.
+    """
+    if isinstance(offset, timedelta):
+        delta = offset
+    else:
+        delta = timedelta(seconds=offset)
+
+    # timedelta has no abs(); compare both bounds explicitly.
+    if delta <= -timedelta(hours=24) or delta >= timedelta(hours=24):
+        raise ValueError(
+            "offset must be a timedelta strictly between "
+            "-timedelta(hours=24) and timedelta(hours=24)."
+        )
+
+    return offset
 
 
 # The following is adapted from Alexander Belopolsky's tz library

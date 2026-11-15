@@ -1,0 +1,10 @@
+The lenient :func:`dateutil.parser.parse` now rejects numeric time zone
+offsets whose hour component is outside 0-23 or whose minute component is
+outside 0-59, matching the range already enforced by the strict
+:class:`dateutil.parser.isoparser`. Previously, malformed offsets such as
+``+25:00`` or ``+2360`` were parsed into a fixed offset that either raised a
+:class:`ValueError` only later, when the resulting aware
+:class:`datetime.datetime` was converted or serialized, or was silently
+converted to a wrong offset. In addition, :class:`dateutil.tz.tzoffset`
+now rejects offsets at or beyond +/- 24 hours at construction time, so both
+parsing paths and the offset construction surface enforce the same boundary.

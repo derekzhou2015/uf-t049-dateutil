@@ -419,6 +419,10 @@ class isoparser:
             if hours > 23:
                 raise ValueError('Invalid hours in time zone offset')
 
+            # The component checks above bound the offset at +/- 23:59;
+            # tzoffset's constructor applies the same +/- 24 hour limit
+            # independently, so both parsing paths and the construction
+            # surface share one enforced boundary.
             return tz.tzoffset(None, mult * (hours * 60 + minutes) * 60)
 
 
